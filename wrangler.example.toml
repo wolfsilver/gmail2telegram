@@ -1,0 +1,13 @@
+name = "gmail2telegram"
+main = "build/index.js"
+compatibility_date = "2023-10-13"
+
+kv_namespaces = [
+    { binding = "xxx", id = "xxx" }
+]
+
+[vars]
+
+TELEGRAM_ID = ""
+TELEGRAM_TOKEN = ":"
+PREVIEW_DOMAIN = ""
