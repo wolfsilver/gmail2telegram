@@ -4,7 +4,7 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev",
+    "dev": "wrangler dev index.js",
     "build": "esbuild index.js --bundle --outfile=build/index.js --format=esm",
     "pub": "wrangler deploy",
     "dep": "npm run build && npm run pub"
