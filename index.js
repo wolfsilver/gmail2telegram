@@ -1,5 +1,10 @@
-import { sha256 } from 'js-sha256';
+import { checkSignature } from "./utils";
 
+// https://core.telegram.org/bots/api#html-style
+const allowedTags = ['b', 'strong', 'i', 'em', 'u', 'ins', 's', 'strike', 'del', 'a', 'code', 'pre', 'tg-spoiler', 'br'];
+const textRegex = /\d{4,}/;
+const styleRegex = /display\s*:\s*none\s*|visibility\s*:\s*hidden/g;
+const MAIL_LENGTH = 2000;
 /**
  * Converts a ReadableStream to an ArrayBuffer.
  *
@@ -26,10 +31,10 @@ async function readEmail(raw) {
   const PostalMime = require("postal-mime");
   const parser = new PostalMime.default();
   const parsedEmail = await parser.parse(raw);
-
+  console.log('parsedEmail', parsedEmail);
   const html = parsedEmail.html;
   const from = `${parsedEmail.from.name} <${parsedEmail.from.address}>`;
-  const to = parsedEmail.deliveredTo;
+  const to = parsedEmail.deliveredTo ?? parsedEmail.to[0].address;
   const message = parsedEmail.text.trim();
   const subject = parsedEmail.subject;
   const messageId = parsedEmail.messageId.replace(/@.*$/, "").replace(/^</, "");
@@ -37,6 +42,7 @@ async function readEmail(raw) {
 }
 
 async function sendMessageToTelegram(id, token, message, messageId, domain) {
+  console.log('sendMessageToTelegram', id, token, message, messageId, domain)
   return await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
     method: "POST",
     headers: {
@@ -56,7 +62,100 @@ async function sendMessageToTelegram(id, token, message, messageId, domain) {
         }]]
       }
     }),
-  });
+  })
+}
+
+class ElementHandler {
+  constructor() {
+    this.mailLength = 0;
+    this.drop = false;
+  }
+
+  text(text) {
+    // 将包含连续4位以上数字的文本使用code标签包裹
+    if (textRegex.test(text.text)) {
+      text.replace(text.text.replace(/(\d{4,})/g, '<code>$1</code>'), { html: true });
+    }
+    this.mailLength += text.text.length;
+    if (this.mailLength > MAIL_LENGTH) {
+      this.drop = true;
+    }
+  }
+  comments(comment) {
+    // 注释去除
+    comment.remove();
+  }
+  element(element) {
+    if (this.drop) {
+      element.remove();
+      return;
+    }
+
+    // display: none; visibility: hidden; 的标签去除
+    if (element.getAttribute('style') && styleRegex.test(element.getAttribute('style'))) {
+      element.replace('<br>', { html: true });
+      return;
+    }
+
+    // 处理不支持的标签
+    if (!allowedTags.includes(element.tagName)) {
+      // TODO 将 h1-h6 转换为 b
+      // if (['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'tr'].includes(element.tagName)) {
+      //     element.after(`<b>${element.innerHTML}</b>`);
+      //     element.remove();
+      //     return;
+      // }
+      // style, script 标签去除
+      if (['style', 'script', 'iframe'].includes(element.tagName)) {
+        element.remove();
+        return;
+      }
+      // p, div, table 标签前插入<br>
+      if (['p', 'div', 'table', 'tr'].includes(element.tagName)) {
+        element.before('<br>', { html: true });
+      }
+      element.removeAndKeepContent();
+      return;
+    }
+
+    // 处理a标签，将内容替换为innerText
+    if (element.tagName === 'a') {
+      // 删除a标签的属性，只保留href
+      const attributes = element.attributes;
+      debugger
+      for (const attribute of attributes) {
+        if (attribute[0] !== 'href') {
+          element.removeAttribute(attribute[0]);
+        }
+      }
+      return;
+    }
+  }
+}
+
+
+/**
+ * 使用HTMLRewriter将html转换为telegram bot支持的html格式
+ * bot支持的标签： <b> <i> <u> <s> <a> <code> <pre> <tg-spoiler>
+ * 1. 去除不支持的标签
+ * 2. 将不支持的标签转换为支持的标签
+ * 3. 将style包含 display: node，visibility: hidden 的标签去除
+ * 4. 将验证码的文本使用code标签包裹
+ */
+async function convertHtmlToTelegram(html) {
+  const rewriter = new HTMLRewriter();
+  rewriter.on('*', new ElementHandler());
+  // 删除换行
+  html = html.replace(/[\r\n]/g, '');
+
+  const result = rewriter.transform(new Response(html, { headers: { 'content-type': 'text/html' } }), { removeWhitespace: true });
+
+  let res = await result.text();
+  // 删除连续的<br>，只保留2个
+  res = res/* .replace(/(<br>\s*){2,}/g, '\n') */.replace(/(<br>\s*)/g, '\n').replace(/&nbsp;/g, '').replace(/(\n\s*){2,}/g, '\n').trim();
+  // 删除空标签
+  res = res.replace(/<([^>]*)\s*?[^>]*>\s*?(<\/\1>)/g, '');
+  return res;
 }
 
 async function getMailContent(request, env) {
@@ -200,6 +299,9 @@ async function fetchHandler(request, env, ctx) {
 }
 
 function convertHtml(html, code = false) {
+  if (!html) {
+    return ''
+  }
   html = html.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   if (code) {
     html = html.replace(/\d{4,}/g, (a, b) => {
@@ -219,52 +321,33 @@ async function emailHandler(message, env, ctx) {
 
   const raw = await streamToArrayBuffer(message.raw, message.rawSize);
   const res = await readEmail(raw);
-  const text = `
-${convertHtml(res.message, true)}
+  let body = res.message;
+  if (res.html) {
+    console.log('html', res.html)
+    body = await convertHtmlToTelegram(res.html).catch((err) => {
+      console.error('convertHtmlToTelegram', err);
+      return null;
+    });
+    console.log('body', body)
+  }
+  const text = `${body ?? res.message}
 _______________
 ✉️: ${convertHtml(res.from)}
 To: ${convertHtml(res.to)}
-${convertHtml(res.subject)}
-`;
-  await sendMessageToTelegram(id, token, text, res.messageId, domain);
+${convertHtml(res.subject)}`;
+
+  await sendMessageToTelegram(id, token, text, res.messageId, domain).then(async (response) => {
+    const result = await response.json();
+    if (!result.ok) {
+      await sendMessageToTelegram(id, token, `${convertHtml(result.description)}
+_______________
+✉️: ${convertHtml(res.from)}
+To: ${convertHtml(res.to)}
+${convertHtml(res.subject)}`, res.messageId, domain)
+    }
+  });
 
   await env.NAMESPACE.put(res.messageId, res.html ?? res.message, { expirationTtl: 15552000 })
-}
-
-function hmacSha256(key, data, hex) {
-  const hash = sha256.hmac.create(key);
-  hash.update(data);
-  if (hex) {
-    return hash.hex();
-  }
-  return hash.arrayBuffer();
-}
-
-function checkSignature(origin, token) {
-  origin = decodeURIComponent(origin)
-
-  let checkString = [];
-  let signature = '';
-  let timeStamp = 0;
-  origin.split('&').forEach(el => {
-    if (el.startsWith('hash=')) {
-      signature = el.substring(5)
-      return;
-    }
-    if (el.startsWith('auth_date=')) {
-      timeStamp = el.substring(10)
-    }
-    checkString.push(el)
-  })
-  if (Math.abs(Date.now() - timeStamp * 1000) > 300000) {
-    return false;
-  }
-
-  checkString = checkString.sort().join('\n')
-
-  const secret_key = hmacSha256("WebAppData", token)
-  const hash = hmacSha256(secret_key, checkString, 'hex')
-  return signature === hash
 }
 
 export default {
