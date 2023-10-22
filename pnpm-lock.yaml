@@ -11,6 +11,9 @@ dependencies:
   js-sha256:
     specifier: ^0.10.1
     version: 0.10.1
+  node-html-parser:
+    specifier: ^6.1.10
+    version: 6.1.10
   postal-mime:
     specifier: ^1.0.16
     version: 1.0.16
@@ -767,6 +770,11 @@ packages:
     resolution: {integrity: sha512-lkX1HJXwyMcprw/5YUZc2s7DrpAiHB21/V+E1rHUrVNokkvB6bqMzT0VfV6/86ZNabt1k14YOIaT7nDvOX3Iiw==}
     dev: true
 
+  /he@1.2.0:
+    resolution: {integrity: sha512-F/1DnUGPopORZi0ni+CvrCgHQ5FyEAHRLSApuYWMmrbSwoN2Mn/7k+Gl38gJnR7yyDZk6WLXwiGod1JOWNDKGw==}
+    hasBin: true
+    dev: false
+
   /htmlparser2@8.0.2:
     resolution: {integrity: sha512-GYdjWKDkbRLkZ5geuHs5NY1puJ+PXwP7+fHPRz06Eirsb9ugf6d8kkXav6ADhcODhFFPMIXyxkxSuMf3D6NCFA==}
     dependencies:
@@ -857,6 +865,13 @@ packages:
     resolution: {integrity: sha512-dPEtOeMvF9VMcYV/1Wb8CPoVAXtp6MKMlcbAt4ddqmGqUJ6fQZFXkNZNkNlfevtNkGtaSoXf/vNNNSvgrdXwtA==}
     engines: {node: '>= 6.13.0'}
     dev: true
+
+  /node-html-parser@6.1.10:
+    resolution: {integrity: sha512-6/uWdWxjQWQ7tMcFK2wWlrflsQUzh1HsEzlIf2j5+TtzfhT2yUvg3DwZYAmjEHeR3uX74ko7exjHW69J0tOzIg==}
+    dependencies:
+      css-select: 5.1.0
+      he: 1.2.0
+    dev: false
 
   /normalize-path@3.0.0:
     resolution: {integrity: sha512-6eZs5Ls3WtCisHWp9S2GUy8dqkpGi4BVSz3GaqiE6ezub0512ESztXUwUB6C6IKbQkY2Pnb/mD4WYojCRwcwLA==}

@@ -1,0 +1,4 @@
+name = "parse-mail-html"
+main = "build/index.js"
+compatibility_date = "2023-10-10"
+send_metrics = false

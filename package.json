@@ -1,11 +1,11 @@
 {
-  "name": "gmail2telegram",
+  "name": "parse-mail-html",
   "version": "1.0.0",
   "main": "index.js",
   "type": "module",
   "scripts": {
     "dev": "wrangler dev index.js",
-    "build": "esbuild index.js --bundle --outfile=build/index.js --format=esm",
+    "build": "esbuild index.js --bundle --outfile=build/index.js --format=esm --minify",
     "pub": "wrangler deploy",
     "dep": "npm run build && npm run pub"
   },
@@ -13,6 +13,7 @@
   "dependencies": {
     "cheerio": "1.0.0-rc.12",
     "js-sha256": "^0.10.1",
+    "node-html-parser": "^6.1.10",
     "postal-mime": "^1.0.16"
   },
   "devDependencies": {
