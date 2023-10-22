@@ -5,6 +5,7 @@ const allowedTags = ['b', 'strong', 'i', 'em', 'u', 'ins', 's', 'strike', 'del',
 const textRegex = /\d{4,}/;
 const styleRegex = /display\s*:\s*none\s*|visibility\s*:\s*hidden/g;
 const MAIL_LENGTH = 2000;
+const MAIL_MAX_LINES = 10;
 /**
  * Converts a ReadableStream to an ArrayBuffer.
  *
@@ -27,22 +28,23 @@ async function streamToArrayBuffer(stream, streamSize) {
   return result;
 }
 
-async function readEmail(raw) {
-  const PostalMime = require("postal-mime");
-  const parser = new PostalMime.default();
-  const parsedEmail = await parser.parse(raw);
-  console.log('parsedEmail', parsedEmail);
-  const html = parsedEmail.html;
-  const from = `${parsedEmail.from.name} <${parsedEmail.from.address}>`;
-  const to = parsedEmail.deliveredTo ?? parsedEmail.to[0].address;
-  const message = parsedEmail.text.trim();
-  const subject = parsedEmail.subject;
-  const messageId = parsedEmail.messageId.replace(/@.*$/, "").replace(/^</, "");
-  return { from, to, subject, message, messageId, html };
+async function readEmail(raw, url) {
+  const res = await fetch(url, {
+    method: 'POST',
+    body: raw,
+    headers: {
+      "content-type": "application/text;charset=UTF-8",
+    },
+  }).then(res => res.json()).catch(err => {
+    console.error(err);
+    return {
+      message: err.message || "Error parsing email",
+    };
+  })
+  return res;
 }
 
 async function sendMessageToTelegram(id, token, message, messageId, domain) {
-  console.log('sendMessageToTelegram', id, token, message, messageId, domain)
   return await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
     method: "POST",
     headers: {
@@ -68,32 +70,63 @@ async function sendMessageToTelegram(id, token, message, messageId, domain) {
 class ElementHandler {
   constructor() {
     this.mailLength = 0;
+    this.lines = 0;
     this.drop = false;
   }
 
   text(text) {
-    // 将包含连续4位以上数字的文本使用code标签包裹
-    if (textRegex.test(text.text)) {
-      text.replace(text.text.replace(/(\d{4,})/g, '<code>$1</code>'), { html: true });
+    if (text.removed) {
+      return;
     }
-    this.mailLength += text.text.length;
+    if (this.drop) {
+      // text.remove();
+      return;
+    }
+    const content = text.text.trim();
+    if (!content) {
+      return;
+    }
+    // 将包含连续4位以上数字的文本使用code标签包裹
+    if (textRegex.test(content)) {
+      text.replace(content.replace(/(\d{4,})/g, '<code>$1</code>'), { html: true });
+    }
+    this.lines += 1;
+    // 最多展示10行
+    // 含有两个以上的换行，算1行
+    if (/[\r\n]{2,}/.test(content)) {
+      this.lines += 1;
+    }
+
+    if (this.lines > MAIL_MAX_LINES) {
+      this.drop = true;
+    }
+
+    this.mailLength += content.length;
     if (this.mailLength > MAIL_LENGTH) {
       this.drop = true;
     }
   }
   comments(comment) {
+    if (this.drop || comment.removed) {
+      return;
+    }
     // 注释去除
     comment.remove();
   }
   element(element) {
+    if (element.removed) {
+      return;
+    }
     if (this.drop) {
       element.remove();
       return;
     }
 
+    const style = element.getAttribute('style');
     // display: none; visibility: hidden; 的标签去除
-    if (element.getAttribute('style') && styleRegex.test(element.getAttribute('style'))) {
-      element.replace('<br>', { html: true });
+    if (style && styleRegex.test(style)) {
+      // element.replace('<br>', { html: true });
+      element.remove();
       return;
     }
 
@@ -106,7 +139,7 @@ class ElementHandler {
       //     return;
       // }
       // style, script 标签去除
-      if (['style', 'script', 'iframe'].includes(element.tagName)) {
+      if (['head', 'style', 'script', 'iframe'].includes(element.tagName)) {
         element.remove();
         return;
       }
@@ -120,21 +153,28 @@ class ElementHandler {
 
     // 处理a标签，将内容替换为innerText
     if (element.tagName === 'a') {
+      // if (element.hasAttribute('href')) {
       // 删除a标签的属性，只保留href
+      element.removeAttribute('id');
+      element.removeAttribute('class');
+      element.removeAttribute('style');
+      element.setAttribute('href', element.getAttribute('href')); // href没有使用双引号包裹
       const attributes = element.attributes;
-      debugger
       for (const attribute of attributes) {
         if (attribute[0] !== 'href') {
           element.removeAttribute(attribute[0]);
         }
       }
       return;
+      // }
+      // element.removeAndKeepContent();
+      // return;
     }
   }
 }
 
-
 /**
+ * https://developers.cloudflare.com/workers/runtime-apis/html-rewriter/#element
  * 使用HTMLRewriter将html转换为telegram bot支持的html格式
  * bot支持的标签： <b> <i> <u> <s> <a> <code> <pre> <tg-spoiler>
  * 1. 去除不支持的标签
@@ -142,19 +182,55 @@ class ElementHandler {
  * 3. 将style包含 display: node，visibility: hidden 的标签去除
  * 4. 将验证码的文本使用code标签包裹
  */
-async function convertHtmlToTelegram(html) {
+async function convertHtmlToTelegram2(html) {
   const rewriter = new HTMLRewriter();
   rewriter.on('*', new ElementHandler());
+  // 取出body标签内容
+  const body = html.replace(/.*?<body.*?>(.*?)<\/body>.*/is, '$1');
+  if (body) {
+    html = body;
+  }
+  // 删除doctype
+  html = html.replace(/^\s*<!DOCTYPE.*?>/i, '');
+  // 删除head标签
+  html = html.replace(/<head>.*?<\/head>/is, '');
+  // 删除注释
+  html = html.replace(/<!--.*?-->/gs, '');
   // 删除换行
-  html = html.replace(/[\r\n]/g, '');
+  html = html.replace(/[\r\n]{2, }/g, '\n\n');
+  html = html.replace(/&nbsp;/g, '')
+    .replace(/&mdash;/g, '—')
+    .replace(/&yen;/g, '￥');
+  // 删除连续空白
+  html = html.replace(/(\s{2,})/g, '');
 
   const result = rewriter.transform(new Response(html, { headers: { 'content-type': 'text/html' } }), { removeWhitespace: true });
 
   let res = await result.text();
   // 删除连续的<br>，只保留2个
-  res = res/* .replace(/(<br>\s*){2,}/g, '\n') */.replace(/(<br>\s*)/g, '\n').replace(/&nbsp;/g, '').replace(/(\n\s*){2,}/g, '\n').trim();
+  res = res/* .replace(/(<br>\s*){2,}/g, '\n') */.replace(/(<br\s*\/?>\s*)/g, '\n');
   // 删除空标签
   res = res.replace(/<([^>]*)\s*?[^>]*>\s*?(<\/\1>)/g, '');
+  return res.replace(/(\n\s*){2,}/g, '\n\n').trim();
+}
+
+async function convertHtmlToTelegram(html, url) {
+  const res = await fetch(url, {
+    method: 'POST',
+    body: html,
+    headers: {
+      "content-type": "application/text;charset=UTF-8",
+    },
+  }).then(async (res) => {
+    let txt = await res.text();
+    if (txt.includes('<body>')) {
+      txt = 'Email parse error.'
+    }
+    return txt;
+  }).catch(err => {
+    console.error(err);
+    return "Error parsing email html"
+  })
   return res;
 }
 
@@ -199,7 +275,8 @@ async function fetchHandler(request, env, ctx) {
   }
   switch (pathname) {
     case "/api/getMail":
-      return await getMailContent(request, env);
+      const mail = await getMailContent(request, env);
+      return mail;
     case "/favicon.ico":
     case "/robots.txt":
       return new Response(null, { status: 204 });
@@ -212,9 +289,8 @@ async function fetchHandler(request, env, ctx) {
         return new Response(null, { status: 304 });
       }
       return res;
-  }
-
-  return new Response(`<!DOCTYPE html>
+    default:
+      return new Response(`<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -271,7 +347,6 @@ async function fetchHandler(request, env, ctx) {
   <div id="app">
     <span class="loader"></span>
   </div>
-  <!-- <script src="https://telegram.org/js/telegram-web-app.js"></script> -->
   <script src="/telegram-web-app.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/axios@1.1.2/dist/axios.min.js"></script>
   <script>
@@ -292,10 +367,11 @@ async function fetchHandler(request, env, ctx) {
   </script>
 </body>
 </html>`, {
-    headers: {
-      "content-type": "text/html;charset=UTF-8",
-    },
-  });
+        headers: {
+          "content-type": "text/html;charset=UTF-8",
+        },
+      });
+  }
 }
 
 function convertHtml(html, code = false) {
@@ -317,21 +393,23 @@ async function emailHandler(message, env, ctx) {
     TELEGRAM_ID: id,
     TELEGRAM_TOKEN: token,
     PREVIEW_DOMAIN: domain,
+    PARSE_MAIL_WORKER,
+    PARSE_MAIL_HTML_WORKER,
   } = env;
 
+
   const raw = await streamToArrayBuffer(message.raw, message.rawSize);
-  const res = await readEmail(raw);
+  const res = await readEmail(raw, PARSE_MAIL_WORKER);
   let body = res.message;
-  if (res.html) {
-    console.log('html', res.html)
-    body = await convertHtmlToTelegram(res.html).catch((err) => {
+  let html = res.html;
+  if (html) {
+    body = await convertHtmlToTelegram(html, PARSE_MAIL_HTML_WORKER).catch((err) => {
       console.error('convertHtmlToTelegram', err);
       return null;
     });
-    console.log('body', body)
   }
   const text = `${body ?? res.message}
-_______________
+_______________________
 ✉️: ${convertHtml(res.from)}
 To: ${convertHtml(res.to)}
 ${convertHtml(res.subject)}`;
@@ -340,14 +418,21 @@ ${convertHtml(res.subject)}`;
     const result = await response.json();
     if (!result.ok) {
       await sendMessageToTelegram(id, token, `${convertHtml(result.description)}
-_______________
+_______________________
 ✉️: ${convertHtml(res.from)}
 To: ${convertHtml(res.to)}
 ${convertHtml(res.subject)}`, res.messageId, domain)
+
     }
+
+    await env.NAMESPACE.put(new Date().toISOString(), JSON.stringify({
+      parsedEmail: res.parsedEmail,
+      body,
+      result,
+    }), { expirationTtl: 604800 })    // 7天
   });
 
-  await env.NAMESPACE.put(res.messageId, res.html ?? res.message, { expirationTtl: 15552000 })
+  await env.NAMESPACE.put(res.messageId, html ?? res.message, { expirationTtl: 15552000 })  // 180天
 }
 
 export default {
