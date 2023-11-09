@@ -3,7 +3,8 @@ import { parse } from 'node-html-parser';
 // https://core.telegram.org/bots/api#html-style
 const allowedTags = ['B', 'STRONG', 'I', 'EM', 'U', 'INS', 'S', 'STRIKE', 'DEL', 'A', 'CODE', 'PRE', 'TG-SPOILER', 'b', 'strong', 'i', 'em', 'u', 'ins', 's', 'strike', 'del', 'a', 'code', 'pre', 'tg-spoiler'];
 const HTags = ['H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'TH', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'th'];
-const INLINE_TAGS = ['SPAN', 'UL', 'OL', 'TR', 'DL', 'DT', 'TABLE', 'THEAD', 'TBODY', 'TFOOT'];
+const inline_tags = ['A', 'SPAN']
+const INLINE_TAGS = ['A', 'SPAN', 'UL', 'OL', 'TR', 'DL', 'DT', 'TABLE', 'THEAD', 'TBODY', 'TFOOT'];
 const textRegex = /\d{4,}/;
 const styleRegex = /display\s*:\s*none\s*|visibility\s*:\s*hidden/g;
 const MAIL_LENGTH = 2000;
@@ -64,13 +65,13 @@ async function convertHtmlToTelegram(html) {
 }
 
 
-function filterHtml(el, PREFIX = '') {
-  if (length > MAIL_MAX_LINES || contentLength > MAIL_LENGTH) {
+function filterHtml(el) {
+  const tagName = el.tagName;
+  if ((length > MAIL_MAX_LINES && (el.nodeType !== 3 || !inline_tags.includes(tagName))) || contentLength > MAIL_LENGTH) {
     return '';
   }
   textRegex.lastIndex = 0;
   styleRegex.lastIndex = 0;
-  const tagName = el.tagName;
   // 文本节点
   if (el.nodeType === 3) {
     // 将包含连续6位数字的文本使用code标签包裹
@@ -127,6 +128,12 @@ function filterHtml(el, PREFIX = '') {
       return `<a href="${el.getAttribute('href')}">${text}</a>`;
     }
     return ''
+  }
+  // span 标签 不包含class = tg-spoiler时，转换为普通文本
+  if (tagName === 'SPAN' || tagName === 'span') {
+    if (!el.classNames?.includes('tg-spoiler')) {
+      return el.childNodes.map(item => filterHtml(item)).join('');
+    }
   }
 
   // 处理支持的标签子节点
