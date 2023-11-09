@@ -110,7 +110,7 @@ function filterHtml(el, PREFIX = '') {
     }
     let prefix = INLINE_TAGS.includes(tagName) ? '' : PREFIX.includes('\n') ? '' : `\n`;
     if (tagName === 'LI' || tagName === 'li') {
-      prefix += `•  `;
+      prefix += `  •  `;
     }
 
     const children = el.childNodes;
@@ -122,7 +122,7 @@ function filterHtml(el, PREFIX = '') {
 
   // 处理a标签
   if (tagName === 'A' || tagName === 'a') {
-    const text = el.rawText.trim();
+    const text = el.text.trim();
     if (text) {
       return `<a href="${el.getAttribute('href')}">${text}</a>`;
     }
