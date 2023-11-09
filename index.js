@@ -111,7 +111,7 @@ function filterHtml(el) {
     if (['style', 'script', 'iframe', 'STYLE', 'SCRIPT', 'IFRAME'].includes(el.name)) {
       return '';
     }
-    let prefix = INLINE_TAGS.includes(tagName) ? '' : PREFIX.includes('\n') ? '' : `\n`;
+    let prefix = INLINE_TAGS.includes(tagName) ? '' : `\n`;
     if (tagName === 'LI' || tagName === 'li') {
       prefix += `  •  `;
     }
