@@ -38,6 +38,8 @@ async function readRequestBody(request) {
 async function convertHtmlToTelegram(html) {
   length = 0;
   contentLength = 0;
+  // 删除doctype
+  html = html.replace(/^\s*<!DOCTYPE.*?>/i, '');
   const root = parse(html, {
     lowerCaseTagName: false,  // convert tag name to lower case (hurts performance heavily)
     comment: false,            // retrieve comments (hurts performance slightly)
