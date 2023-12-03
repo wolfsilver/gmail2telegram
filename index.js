@@ -81,6 +81,8 @@ function filterHtml(el) {
     if (!content.trim()) {
       return '';
     }
+    // pre标签内容不会解析，content内的标签移除
+    content = content.replace(/<[^>]+>/g, '');
     length += Math.max(Math.round(content.length / 50), 1);
     contentLength += content.length;
     if (content.match(textRegex)) {
