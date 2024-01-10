@@ -412,7 +412,7 @@ async function emailHandler(message, env, ctx) {
 _______________________
 ✉️: ${convertHtml(res.from)}
 To: ${convertHtml(res.to)}
-${convertHtml(res.subject)}`;
+${convertHtml(res.subject, true)}`;
 
   await sendMessageToTelegram(id, token, text, res.messageId, domain).then(async (response) => {
     const result = await response.json();
@@ -425,14 +425,16 @@ ${convertHtml(res.subject)}`, res.messageId, domain)
 
     }
 
-    await env.NAMESPACE.put(new Date().toISOString(), JSON.stringify({
+    await env.NAMESPACE.put(`${new Date().toISOString()} -- ${res.subject.slice(0, 10)}`, JSON.stringify({
       parsedEmail: res.parsedEmail,
       body,
       result,
-    }), { expirationTtl: 604800 })    // 7天
+    }), { expirationTtl: 604800 }).catch((e) => console.log('save log error', e))    // 7天
   });
 
-  await env.NAMESPACE.put(res.messageId, html ?? res.message, { expirationTtl: 15552000 })  // 180天
+  await env.NAMESPACE.put(res.messageId, html ?? res.message, { expirationTtl: 15552000 }).catch(e => {
+    console.log('save email error', e)
+  })  // 180天
 }
 
 export default {
