@@ -77,7 +77,7 @@ function filterHtml(el) {
   // 文本节点
   if (el.nodeType === 3) {
     // 将包含连续6位数字的文本使用code标签包裹
-    let content = el.trimmedText;
+    let content = el.trimmedRawText;  // trimmedText; // 可能会有 &lt; &gt; 等转义字符
     if (!content.trim()) {
       return '';
     }
