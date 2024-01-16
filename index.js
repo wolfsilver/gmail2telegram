@@ -77,12 +77,13 @@ function filterHtml(el) {
   // 文本节点
   if (el.nodeType === 3) {
     // 将包含连续6位数字的文本使用code标签包裹
-    let content = el.trimmedRawText;  // trimmedText; // 可能会有 &lt; &gt; 等转义字符
+    let content = el.trimmedText;  // trimmedText;  trimmedRawText // 可能会有 &lt; &gt; 等转义字符
     if (!content.trim()) {
       return '';
     }
     // pre标签内容不会解析，content内的标签移除
     content = content.replace(/<[^>]+>/g, '');
+    content = content.replace(/</g, '&lt;').replace(/>/g, '&gt;');
     length += Math.max(Math.round(content.length / 50), 1);
     contentLength += content.length;
     if (content.match(textRegex)) {
