@@ -130,7 +130,9 @@ function filterHtml(el) {
   if (tagName === 'A' || tagName === 'a') {
     const text = el.text.trim();
     if (text) {
-      return `<a href="${el.getAttribute('href')}">${text}</a>`;
+      const href = el.getAttribute('href');
+      contentLength += href.length;
+      return `<a href="${href}">${text}</a>`;
     }
     return ''
   }
